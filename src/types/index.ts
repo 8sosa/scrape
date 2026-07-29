@@ -142,8 +142,6 @@ export interface ProcessedLeadRecord {
 export interface PipelineRunSummary {
   readonly fetched: number;
   readonly matched: number;
-  readonly freshEnough: number;
-  readonly wellMatched: number;
   readonly new: number;
   readonly notified: number;
   readonly deferred: number;

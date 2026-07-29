@@ -59,17 +59,6 @@ export interface AppConfig {
     /** Telegram's real flood limit is close to 1 message/second per chat — this must stay >= 1000. */
     readonly telegramSendIntervalMs: number;
   };
-  readonly resumeMatch: {
-    /**
-     * Leads older than this are dropped from consideration entirely. This
-     * doubles as the backlog control: an unsent lead just ages out on its
-     * own in a later run rather than being deferred forever, so a growing
-     * backlog can never bury genuinely new leads.
-     */
-    readonly freshnessWindowHours: number;
-    /** Hard cutoff — only leads scoring at or above this (out of 10) are notified. */
-    readonly minScore: number;
-  };
   readonly cronSchedule: string;
 }
 
@@ -246,10 +235,6 @@ export const config: AppConfig = {
     // safely inside Netlify's 30s function timeout with margin for fetch/dedup.
     maxNotificationsPerRun: 15,
     telegramSendIntervalMs: 1100,
-  },
-  resumeMatch: {
-    freshnessWindowHours: 5,
-    minScore: 8,
   },
   cronSchedule: process.env['CRON_SCHEDULE'] ?? '*/10 * * * *',
 };

@@ -32,37 +32,28 @@ export async function runPipeline(): Promise<PipelineRunSummary> {
   const highIntentLeads = filterHighIntentLeads(allLeads);
   console.log(`[pipeline] ${highIntentLeads.length} leads matched high-intent filters`);
 
-  // Anything older than the freshness window is dropped from consideration
-  // entirely — this is also the backlog control: an unsent lead just ages
-  // out on its own in a later run instead of being deferred forever, so a
-  // growing backlog can never bury genuinely new leads.
-  const freshnessWindowSeconds = config.resumeMatch.freshnessWindowHours * 3600;
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  const freshLeads = highIntentLeads.filter((lead) => nowSeconds - lead.createdUtc <= freshnessWindowSeconds);
-  console.log(`[pipeline] ${freshLeads.length} leads are within the ${config.resumeMatch.freshnessWindowHours}h freshness window`);
-
+  // Every matched lead gets scored against the resume, but the score is only
+  // ever a sort factor, never a cutoff — a low-scoring lead still gets sent,
+  // just later, rather than being silently dropped.
   const matchByLeadId = new Map<string, LeadMatch>();
-  const wellMatchedLeads = freshLeads.filter((lead) => {
-    const match = scoreLead(lead);
-    matchByLeadId.set(lead.leadId, match);
-    return match.score >= config.resumeMatch.minScore;
-  });
-  console.log(`[pipeline] ${wellMatchedLeads.length} leads score >= ${config.resumeMatch.minScore}/10 against the resume`);
+  for (const lead of highIntentLeads) {
+    matchByLeadId.set(lead.leadId, scoreLead(lead));
+  }
 
-  const newLeads = await filterUnprocessedLeads(wellMatchedLeads);
+  const newLeads = await filterUnprocessedLeads(highIntentLeads);
   console.log(`[pipeline] ${newLeads.length} leads are new (not previously notified)`);
 
-  // Highest fit score first (freshest as tie-breaker), capped so a large
-  // batch can't blow the serverless time budget or Telegram's flood limit in
-  // one run. Anything past the cap simply isn't recorded as processed, so
-  // it's picked up again — and re-ranked — on the next run (or ages out of
-  // the freshness window before that happens, which is fine).
-  const sortedByScore = [...newLeads].sort((a, b) => {
-    const scoreDiff = (matchByLeadId.get(b.leadId)?.score ?? 0) - (matchByLeadId.get(a.leadId)?.score ?? 0);
-    return scoreDiff !== 0 ? scoreDiff : b.createdUtc - a.createdUtc;
+  // Most recent first (fit score as tie-breaker only) — no hard age cutoff.
+  // Capped so a large batch can't blow the serverless time budget or
+  // Telegram's flood limit in one run. Anything past the cap simply isn't
+  // recorded as processed, so it's picked up again next run, naturally
+  // out-ranked once fresher leads show up.
+  const sortedByRecency = [...newLeads].sort((a, b) => {
+    const recencyDiff = b.createdUtc - a.createdUtc;
+    return recencyDiff !== 0 ? recencyDiff : (matchByLeadId.get(b.leadId)?.score ?? 0) - (matchByLeadId.get(a.leadId)?.score ?? 0);
   });
-  const leadsToNotify = sortedByScore.slice(0, config.pipeline.maxNotificationsPerRun);
-  const deferredCount = sortedByScore.length - leadsToNotify.length;
+  const leadsToNotify = sortedByRecency.slice(0, config.pipeline.maxNotificationsPerRun);
+  const deferredCount = sortedByRecency.length - leadsToNotify.length;
   if (deferredCount > 0) {
     console.warn(
       `[pipeline] Capping notifications at ${config.pipeline.maxNotificationsPerRun} this run; ${deferredCount} lower-priority new lead(s) deferred to a future run.`,
@@ -102,8 +93,6 @@ export async function runPipeline(): Promise<PipelineRunSummary> {
   return {
     fetched: allLeads.length,
     matched: highIntentLeads.length,
-    freshEnough: freshLeads.length,
-    wellMatched: wellMatchedLeads.length,
     new: newLeads.length,
     notified: notifiedLeads.length,
     deferred: deferredCount,
