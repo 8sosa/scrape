@@ -11,8 +11,14 @@ export interface AppConfig {
     readonly subreddits: readonly string[];
     readonly hiringOnlySubreddits: readonly string[];
     readonly postsPerSubreddit: number;
-    readonly clientId: string;
-    readonly clientSecret: string;
+    /**
+     * Null when REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET aren't set. Reddit's
+     * API self-service registration is currently locked down (see the
+     * Responsible Builder Policy), so approval can take weeks or be denied —
+     * this must stay optional rather than crash the whole pipeline.
+     */
+    readonly clientId: string | null;
+    readonly clientSecret: string | null;
     readonly tokenUrl: string;
     readonly oauthBaseUrl: string;
   };
@@ -59,6 +65,11 @@ function requireEnv(name: string): string {
     throw new Error(`Missing required environment variable: ${name}`);
   }
   return value;
+}
+
+function optionalEnv(name: string): string | null {
+  const value = process.env[name];
+  return value && value.trim().length > 0 ? value : null;
 }
 
 /** Subreddits to poll for high-intent leads. */
@@ -163,8 +174,8 @@ export const config: AppConfig = {
     subreddits: SUBREDDITS,
     hiringOnlySubreddits: HIRING_ONLY_SUBREDDITS,
     postsPerSubreddit: 25,
-    clientId: requireEnv('REDDIT_CLIENT_ID'),
-    clientSecret: requireEnv('REDDIT_CLIENT_SECRET'),
+    clientId: optionalEnv('REDDIT_CLIENT_ID'),
+    clientSecret: optionalEnv('REDDIT_CLIENT_SECRET'),
     tokenUrl: 'https://www.reddit.com/api/v1/access_token',
     oauthBaseUrl: 'https://oauth.reddit.com',
   },

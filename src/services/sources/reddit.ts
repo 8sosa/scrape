@@ -29,6 +29,10 @@ interface CachedToken {
 let cachedToken: CachedToken | null = null;
 
 async function fetchAccessToken(): Promise<string> {
+  if (!config.reddit.clientId || !config.reddit.clientSecret) {
+    throw new Error('Reddit OAuth credentials are not configured');
+  }
+
   const response = await axios.post<RedditTokenResponse>(
     config.reddit.tokenUrl,
     new URLSearchParams({ grant_type: 'client_credentials' }).toString(),
@@ -121,9 +125,31 @@ async function fetchSubredditNew(subreddit: string, attempt = 1): Promise<readon
   }
 }
 
+let hasWarnedNotConfigured = false;
+
+/**
+ * Reddit's API self-service registration is currently closed (Responsible
+ * Builder Policy) — approval can take weeks or be denied outright. Until
+ * REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET are set, this source sits out
+ * entirely rather than erroring, so the other sources keep working.
+ */
 async function fetchLatest(): Promise<readonly NormalizedLead[]> {
-  // Acquire the token once up front so 8 parallel subreddit fetches don't each trigger their own auth request.
-  await getAccessToken();
+  if (!config.reddit.clientId || !config.reddit.clientSecret) {
+    if (!hasWarnedNotConfigured) {
+      console.warn('[reddit] Skipping — REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET are not set (Reddit API access not yet approved).');
+      hasWarnedNotConfigured = true;
+    }
+    return [];
+  }
+
+  try {
+    // Acquire the token once up front so 8 parallel subreddit fetches don't each trigger their own auth request.
+    await getAccessToken();
+  } catch (error) {
+    console.error(`[reddit] Failed to acquire OAuth token, skipping this run: ${(error as Error).message}`);
+    return [];
+  }
+
   const results = await Promise.all(config.reddit.subreddits.map((subreddit) => fetchSubredditNew(subreddit)));
   return results.flat();
 }
