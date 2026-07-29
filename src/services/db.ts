@@ -60,24 +60,49 @@ export async function filterUnprocessedLeads(leads: readonly NormalizedLead[]): 
   return batchResults.flat();
 }
 
-/** Records newly notified leads in a single batched insert so they are never alerted on again. */
-export async function recordProcessedLeads(leads: readonly NormalizedLead[]): Promise<void> {
-  if (leads.length === 0) {
-    return;
-  }
+/** Postgres unique_violation — the code path that means "another invocation already claimed this". */
+const UNIQUE_VIOLATION = '23505';
 
-  const records: readonly ProcessedLeadRecord[] = leads.map((lead) => ({
+/**
+ * Atomically claims a lead by inserting it into processed_leads BEFORE
+ * sending any notification for it. `filterUnprocessedLeads` is only a
+ * best-effort pre-filter — under overlapping/concurrent invocations (two
+ * scheduled runs overlapping, a manual re-trigger while one is still in
+ * flight, etc.) two runs can both see the same lead as "not yet processed"
+ * in that check. The unique constraint on lead_id is the actual source of
+ * truth: whichever invocation's insert lands first wins the lead, and the
+ * other gets a 23505 back here — BEFORE it has sent anything — so only one
+ * Telegram message ever goes out per lead, however many runs are overlapping.
+ */
+export async function tryClaimLead(lead: NormalizedLead): Promise<boolean> {
+  const record: ProcessedLeadRecord = {
     lead_id: lead.leadId,
     platform: lead.platform,
     channel: lead.channel,
     title: lead.title,
     url: lead.url,
-  }));
+  };
 
-  const { error } = await supabase.from(config.supabase.table).insert(records);
+  const { error } = await supabase.from(config.supabase.table).insert(record);
 
   if (error) {
-    console.error(`[db] Failed to record ${records.length} processed lead(s): ${error.message}`);
-    throw new Error(`Failed to persist processed leads: ${error.message}`);
+    if (error.code === UNIQUE_VIOLATION) {
+      return false;
+    }
+    console.error(`[db] Failed to claim lead ${lead.leadId}, skipping it this run: ${error.message}`);
+    // Fail closed — an unclaimed lead is simply reconsidered next run rather
+    // than risking a duplicate send on an ambiguous DB error.
+    return false;
+  }
+
+  return true;
+}
+
+/** Releases a claimed lead so it's retried on a future run, e.g. after its Telegram send actually failed. */
+export async function releaseLead(leadId: string): Promise<void> {
+  const { error } = await supabase.from(config.supabase.table).delete().eq('lead_id', leadId);
+
+  if (error) {
+    console.error(`[db] Failed to release lead ${leadId} after a failed send (it won't be retried): ${error.message}`);
   }
 }

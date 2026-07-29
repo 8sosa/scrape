@@ -1,7 +1,7 @@
 import { config } from './config';
 import { leadSources } from './services/sources';
 import { filterHighIntentLeads } from './services/filter';
-import { filterUnprocessedLeads, recordProcessedLeads } from './services/db';
+import { filterUnprocessedLeads, releaseLead, tryClaimLead } from './services/db';
 import { scoreLead } from './services/resumeMatch';
 import { sendLeadNotification } from './services/telegram';
 import { sleep } from './utils/sleep';
@@ -62,10 +62,21 @@ export async function runPipeline(): Promise<PipelineRunSummary> {
 
   const notifiedLeads: NormalizedLead[] = [];
   for (const lead of leadsToNotify) {
+    // Claim BEFORE sending — the atomic insert is what actually prevents two
+    // overlapping invocations (an overlapping schedule, a manual re-trigger
+    // mid-run, etc.) from both sending the same lead. If another invocation
+    // already claimed it, this returns false and we move on without ever
+    // calling Telegram for it.
+    const claimed = await tryClaimLead(lead);
+    if (!claimed) {
+      continue;
+    }
+
     const match = matchByLeadId.get(lead.leadId);
     const result = await sendLeadNotification(lead, match);
 
     if (result === 'flood-limited') {
+      await releaseLead(lead.leadId);
       console.warn(
         `[pipeline] Telegram flood limit hit after ${notifiedLeads.length} send(s) this run; stopping early — the rest are deferred to the next run.`,
       );
@@ -74,15 +85,10 @@ export async function runPipeline(): Promise<PipelineRunSummary> {
 
     if (result === 'sent') {
       notifiedLeads.push(lead);
-      try {
-        // Recorded immediately, not batched at the end — if this run gets
-        // killed by the platform mid-loop (e.g. hitting the timeout), every
-        // lead already sent is already durably marked processed, so it can
-        // never be re-sent as a duplicate on the next run.
-        await recordProcessedLeads([lead]);
-      } catch (error) {
-        console.error(`[pipeline] Failed to persist lead ${lead.leadId} right after sending (risk of a duplicate alert next run):`, error);
-      }
+    } else {
+      // Claimed but never actually delivered — release it so it's retried
+      // on a future run instead of being silently lost.
+      await releaseLead(lead.leadId);
     }
 
     await sleep(config.pipeline.telegramSendIntervalMs);
