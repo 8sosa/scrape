@@ -1,3 +1,4 @@
+import { config } from './config';
 import { leadSources } from './services/sources';
 import { filterHighIntentLeads } from './services/filter';
 import { filterUnprocessedLeads, recordProcessedLeads } from './services/db';
@@ -36,20 +37,34 @@ export async function runPipeline(): Promise<PipelineRunSummary> {
   const newLeads = await filterUnprocessedLeads(highIntentLeads);
   console.log(`[pipeline] ${newLeads.length} leads are new (not previously notified)`);
 
+  // Newest first, capped, so a large backlog (e.g. right after loosening a
+  // filter) can't blow a serverless function's time budget or Telegram's
+  // flood limit in one run. Anything past the cap simply isn't recorded as
+  // processed, so it's picked up again — and re-ranked — on the next run.
+  const sortedByNewest = [...newLeads].sort((a, b) => b.createdUtc - a.createdUtc);
+  const leadsToNotify = sortedByNewest.slice(0, config.pipeline.maxNotificationsPerRun);
+  const deferredCount = sortedByNewest.length - leadsToNotify.length;
+  if (deferredCount > 0) {
+    console.warn(
+      `[pipeline] Capping notifications at ${config.pipeline.maxNotificationsPerRun} this run; ${deferredCount} older new lead(s) deferred to a future run.`,
+    );
+  }
+
   const notifiedLeads: NormalizedLead[] = [];
-  for (const [index, lead] of newLeads.entries()) {
+  for (const [index, lead] of leadsToNotify.entries()) {
     const sent = await sendLeadNotification(lead);
     if (sent) {
       notifiedLeads.push(lead);
     }
-    if (index < newLeads.length - 1) {
+    if (index < leadsToNotify.length - 1) {
       await sleep(TELEGRAM_SEND_INTERVAL_MS);
     }
   }
 
   try {
-    // Only leads that were actually sent get recorded — a failed send should
-    // retry on the next run rather than being silently marked as processed.
+    // Only leads that were actually sent get recorded — a failed send (or a
+    // deferred one past the cap) should be reconsidered next run rather than
+    // being silently marked as processed.
     await recordProcessedLeads(notifiedLeads);
   } catch (error) {
     console.error('[pipeline] Failed to persist notified leads (risk of a duplicate alert next run):', error);
@@ -62,5 +77,6 @@ export async function runPipeline(): Promise<PipelineRunSummary> {
     matched: highIntentLeads.length,
     new: newLeads.length,
     notified: notifiedLeads.length,
+    deferred: deferredCount,
   };
 }

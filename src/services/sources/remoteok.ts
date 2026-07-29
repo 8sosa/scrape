@@ -20,13 +20,19 @@ function normalizeJob(job: RemoteOkJob & { id: string }): NormalizedLead {
     author: job.company ?? '[unknown]',
     url: job.url ?? `https://remoteok.com/remote-jobs/${job.id}`,
     createdUtc,
+    filterMode: 'stack-relevance',
   };
 }
 
-/** Fetches the RemoteOK public job feed. Requires a descriptive User-Agent — the default axios UA gets blocked. */
+/**
+ * Fetches the RemoteOK public job feed, scoped to the "dev" tag to cut noise
+ * from non-engineering listings. Requires a descriptive User-Agent — the
+ * default axios UA gets blocked.
+ */
 async function fetchLatest(): Promise<readonly NormalizedLead[]> {
   try {
     const response = await axios.get<readonly RemoteOkJob[]>(config.remoteOk.apiUrl, {
+      params: { tags: 'dev' },
       headers: { 'User-Agent': config.userAgent, Accept: 'application/json' },
       timeout: 8_000,
     });

@@ -12,6 +12,7 @@ function normalizeHit(hit: HackerNewsHit): NormalizedLead {
     author: hit.author ?? '[unknown]',
     url: hit.url ?? `https://news.ycombinator.com/item?id=${hit.objectID}`,
     createdUtc: hit.created_at_i,
+    filterMode: 'intent-phrase',
   };
 }
 

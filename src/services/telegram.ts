@@ -29,11 +29,19 @@ function formatSourceLine(lead: NormalizedLead): string {
     case 'reddit':
       return `Reddit — r/${lead.channel}`;
     case 'hackernews':
-      return 'Hacker News';
+      return lead.channel;
     case 'remoteok':
       return `RemoteOK — ${lead.channel}`;
     case 'weworkremotely':
       return `We Work Remotely — ${lead.channel}`;
+    case 'remotive':
+      return `Remotive — ${lead.channel}`;
+    case 'arbeitnow':
+      return `Arbeitnow — ${lead.channel}`;
+    default: {
+      const exhaustiveCheck: never = lead.platform;
+      throw new Error(`Unhandled platform: ${String(exhaustiveCheck)}`);
+    }
   }
 }
 

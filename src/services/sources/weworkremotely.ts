@@ -46,6 +46,7 @@ async function fetchFeed(feedUrl: string): Promise<readonly NormalizedLead[]> {
           author,
           url: link,
           createdUtc,
+          filterMode: 'stack-relevance',
         },
       ];
     });
