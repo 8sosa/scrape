@@ -55,6 +55,8 @@ export interface AppConfig {
   readonly pipeline: {
     /** Caps Telegram sends per run so a large backlog can't blow the serverless timeout or Telegram's flood limit. */
     readonly maxNotificationsPerRun: number;
+    /** Telegram's real flood limit is close to 1 message/second per chat — this must stay >= 1000. */
+    readonly telegramSendIntervalMs: number;
   };
   readonly cronSchedule: string;
 }
@@ -208,7 +210,10 @@ export const config: AppConfig = {
     apiBaseUrl: 'https://api.telegram.org',
   },
   pipeline: {
-    maxNotificationsPerRun: 40,
+    // At ~1.4s per send (1100ms spacing + network latency), 15/run stays
+    // safely inside Netlify's 30s function timeout with margin for fetch/dedup.
+    maxNotificationsPerRun: 15,
+    telegramSendIntervalMs: 1100,
   },
   cronSchedule: process.env['CRON_SCHEDULE'] ?? '*/10 * * * *',
 };

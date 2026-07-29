@@ -66,10 +66,20 @@ function formatLeadMessage(lead: NormalizedLead): string {
 interface TelegramSendMessageResponse {
   readonly ok: boolean;
   readonly description?: string;
+  readonly error_code?: number;
+  readonly parameters?: { readonly retry_after?: number };
 }
 
+/**
+ * 'flood-limited' is distinguished from a plain 'failed' so the pipeline can
+ * stop sending entirely for this run — once Telegram 429s a chat, every
+ * subsequent send in the same run will too, so retrying into it just burns
+ * the function's time budget for nothing.
+ */
+export type SendResult = 'sent' | 'failed' | 'flood-limited';
+
 /** Sends a single formatted lead alert to the configured Telegram chat/channel. */
-export async function sendLeadNotification(lead: NormalizedLead): Promise<boolean> {
+export async function sendLeadNotification(lead: NormalizedLead): Promise<SendResult> {
   const url = `${config.telegram.apiBaseUrl}/bot${config.telegram.botToken}/sendMessage`;
   const text = formatLeadMessage(lead);
 
@@ -87,15 +97,21 @@ export async function sendLeadNotification(lead: NormalizedLead): Promise<boolea
 
     if (!response.data.ok) {
       console.error(`[telegram] API rejected message for lead_id=${lead.leadId}: ${response.data.description ?? 'unknown error'}`);
-      return false;
+      return 'failed';
     }
 
     console.log(`[telegram] Sent alert for lead_id=${lead.leadId} (${lead.platform})`);
-    return true;
+    return 'sent';
   } catch (error) {
     const axiosError = error as AxiosError<TelegramSendMessageResponse>;
     const description = axiosError.response?.data?.description ?? axiosError.message;
+
+    if (axiosError.response?.status === 429) {
+      console.error(`[telegram] Flood limited sending lead_id=${lead.leadId}: ${description}`);
+      return 'flood-limited';
+    }
+
     console.error(`[telegram] Failed to send alert for lead_id=${lead.leadId}: ${description}`);
-    return false;
+    return 'failed';
   }
 }

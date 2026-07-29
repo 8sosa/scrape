@@ -6,9 +6,6 @@ import { sendLeadNotification } from './services/telegram';
 import { sleep } from './utils/sleep';
 import type { NormalizedLead, PipelineRunSummary } from './types';
 
-// Telegram recommends no more than ~1 message/second to the same chat to avoid flood limits.
-const TELEGRAM_SEND_INTERVAL_MS = 350;
-
 /** Runs one full fetch (all sources, in parallel) -> filter -> dedupe -> notify cycle. */
 export async function runPipeline(): Promise<PipelineRunSummary> {
   const startedAt = new Date().toISOString();
@@ -51,23 +48,30 @@ export async function runPipeline(): Promise<PipelineRunSummary> {
   }
 
   const notifiedLeads: NormalizedLead[] = [];
-  for (const [index, lead] of leadsToNotify.entries()) {
-    const sent = await sendLeadNotification(lead);
-    if (sent) {
-      notifiedLeads.push(lead);
-    }
-    if (index < leadsToNotify.length - 1) {
-      await sleep(TELEGRAM_SEND_INTERVAL_MS);
-    }
-  }
+  for (const lead of leadsToNotify) {
+    const result = await sendLeadNotification(lead);
 
-  try {
-    // Only leads that were actually sent get recorded — a failed send (or a
-    // deferred one past the cap) should be reconsidered next run rather than
-    // being silently marked as processed.
-    await recordProcessedLeads(notifiedLeads);
-  } catch (error) {
-    console.error('[pipeline] Failed to persist notified leads (risk of a duplicate alert next run):', error);
+    if (result === 'flood-limited') {
+      console.warn(
+        `[pipeline] Telegram flood limit hit after ${notifiedLeads.length} send(s) this run; stopping early — the rest are deferred to the next run.`,
+      );
+      break;
+    }
+
+    if (result === 'sent') {
+      notifiedLeads.push(lead);
+      try {
+        // Recorded immediately, not batched at the end — if this run gets
+        // killed by the platform mid-loop (e.g. hitting the timeout), every
+        // lead already sent is already durably marked processed, so it can
+        // never be re-sent as a duplicate on the next run.
+        await recordProcessedLeads([lead]);
+      } catch (error) {
+        console.error(`[pipeline] Failed to persist lead ${lead.leadId} right after sending (risk of a duplicate alert next run):`, error);
+      }
+    }
+
+    await sleep(config.pipeline.telegramSendIntervalMs);
   }
 
   console.log(`[pipeline] Run completed at ${new Date().toISOString()}`);

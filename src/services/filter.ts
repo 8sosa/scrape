@@ -49,15 +49,21 @@ function evaluateIntentPhrase(lead: NormalizedLead): FilterResult {
  * hiring/freelancer threads) are already hiring posts by construction — they
  * never phrase themselves as "looking for a developer". Relevance to the
  * dev/web stack is the right bar here, not intent phrasing.
+ *
+ * Matched against the TITLE ONLY, not the body: job descriptions are full of
+ * company boilerplate ("SaaS leader", "our engineering team") that isn't
+ * about the specific role being advertised — checking body text let sales,
+ * HR, and finance postings at tech companies slip through.
  */
 function evaluateStackRelevance(lead: NormalizedLead): FilterResult {
+  const titleText = lead.title.toLowerCase();
   const combinedText = `${lead.title}\n${lead.body}`.toLowerCase();
 
   if (config.exclusionTerms.some((term) => containsPhrase(combinedText, term))) {
     return { isMatch: false, matchedTriggers: [] };
   }
 
-  const matchedTriggers = config.devRelevanceKeywords.filter((keyword) => containsPhrase(combinedText, keyword));
+  const matchedTriggers = config.devRelevanceKeywords.filter((keyword) => containsPhrase(titleText, keyword));
   return { isMatch: matchedTriggers.length > 0, matchedTriggers };
 }
 
