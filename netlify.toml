@@ -1,0 +1,7 @@
+[build]
+  publish = "public"
+  command = "echo 'No build step required — Netlify bundles the function directly from src/.'"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"

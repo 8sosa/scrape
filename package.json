@@ -1,0 +1,32 @@
+{
+  "name": "lead-scraper",
+  "version": "1.0.0",
+  "description": "Polls Reddit, Hacker News, RemoteOK and We Work Remotely for high-intent freelance/contract dev leads and pushes real-time Telegram alerts.",
+  "main": "dist/index.js",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "typecheck:functions": "tsc -p tsconfig.functions.json",
+    "netlify:dev": "netlify dev"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "axios": "^1.7.7",
+    "dotenv": "^16.4.5",
+    "node-cron": "^3.0.3",
+    "rss-parser": "^3.13.0"
+  },
+  "devDependencies": {
+    "@netlify/functions": "^2.8.2",
+    "@types/node": "^20.14.15",
+    "@types/node-cron": "^3.0.11",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.5.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
