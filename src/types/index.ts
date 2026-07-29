@@ -82,6 +82,7 @@ export interface ArbeitnowJob {
   readonly url?: string;
   readonly tags?: readonly string[];
   readonly job_types?: readonly string[];
+  readonly remote?: boolean;
   /** Unix seconds. */
   readonly created_at?: number;
 }
@@ -141,7 +142,17 @@ export interface ProcessedLeadRecord {
 export interface PipelineRunSummary {
   readonly fetched: number;
   readonly matched: number;
+  readonly freshEnough: number;
+  readonly wellMatched: number;
   readonly new: number;
   readonly notified: number;
   readonly deferred: number;
+}
+
+/** Result of scoring one lead's mentioned tech stack against the resume skill list. */
+export interface LeadMatch {
+  /** 0-10: what fraction of the lead's mentioned skills are ones on the resume. 0 if the lead mentions no recognized skill at all. */
+  readonly score: number;
+  readonly matchedSkills: readonly string[];
+  readonly mentionedSkills: readonly string[];
 }

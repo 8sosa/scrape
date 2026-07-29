@@ -6,6 +6,7 @@ export interface AppConfig {
   readonly triggerKeywords: readonly string[];
   readonly devRelevanceKeywords: readonly string[];
   readonly exclusionTerms: readonly string[];
+  readonly nonRemoteExclusionTerms: readonly string[];
   readonly userAgent: string;
   readonly reddit: {
     readonly subreddits: readonly string[];
@@ -57,6 +58,17 @@ export interface AppConfig {
     readonly maxNotificationsPerRun: number;
     /** Telegram's real flood limit is close to 1 message/second per chat — this must stay >= 1000. */
     readonly telegramSendIntervalMs: number;
+  };
+  readonly resumeMatch: {
+    /**
+     * Leads older than this are dropped from consideration entirely. This
+     * doubles as the backlog control: an unsent lead just ages out on its
+     * own in a later run rather than being deferred forever, so a growing
+     * backlog can never bury genuinely new leads.
+     */
+    readonly freshnessWindowHours: number;
+    /** Hard cutoff — only leads scoring at or above this (out of 10) are notified. */
+    readonly minScore: number;
   };
   readonly cronSchedule: string;
 }
@@ -155,6 +167,25 @@ const DEV_RELEVANCE_KEYWORDS: readonly string[] = [
 const EXCLUSION_TERMS: readonly string[] = ['[for hire]', 'i am offering', 'hire me'];
 
 /**
+ * Best-effort text signal for "this isn't actually remote", used for sources
+ * without a structured location field (Reddit, HN). Arbeitnow has a real
+ * `remote` flag and is filtered on that directly instead; RemoteOK/WWR/
+ * Remotive are remote-only job boards by construction and don't need this.
+ */
+const NON_REMOTE_EXCLUSION_TERMS: readonly string[] = [
+  'on-site only',
+  'onsite only',
+  'in-office required',
+  'in office required',
+  'must relocate',
+  'relocation required',
+  'no remote work',
+  'not remote friendly',
+  'hybrid role',
+  'hybrid position',
+];
+
+/**
  * Meta hiring subreddits where the [HIRING]/[FOR HIRE] tag convention applies.
  * Posts here are gated strictly on the [HIRING] tag rather than free-text keyword matching.
  */
@@ -171,6 +202,7 @@ export const config: AppConfig = {
   triggerKeywords: TRIGGER_KEYWORDS,
   devRelevanceKeywords: DEV_RELEVANCE_KEYWORDS,
   exclusionTerms: EXCLUSION_TERMS,
+  nonRemoteExclusionTerms: NON_REMOTE_EXCLUSION_TERMS,
   userAgent: process.env['SCRAPER_USER_AGENT'] ?? 'lead-scraper-bot/1.0',
   reddit: {
     subreddits: SUBREDDITS,
@@ -214,6 +246,10 @@ export const config: AppConfig = {
     // safely inside Netlify's 30s function timeout with margin for fetch/dedup.
     maxNotificationsPerRun: 15,
     telegramSendIntervalMs: 1100,
+  },
+  resumeMatch: {
+    freshnessWindowHours: 5,
+    minScore: 8,
   },
   cronSchedule: process.env['CRON_SCHEDULE'] ?? '*/10 * * * *',
 };

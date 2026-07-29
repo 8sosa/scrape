@@ -69,6 +69,11 @@ function evaluateStackRelevance(lead: NormalizedLead): FilterResult {
 
 /** Evaluates a single normalized lead against the high-intent filtering rules for its mode. */
 export function evaluateLead(lead: NormalizedLead): FilterResult {
+  const combinedText = `${lead.title}\n${lead.body}`.toLowerCase();
+  if (config.nonRemoteExclusionTerms.some((term) => containsPhrase(combinedText, term))) {
+    return { isMatch: false, matchedTriggers: [] };
+  }
+
   switch (lead.filterMode) {
     case 'strict-hiring-tag':
       return evaluateStrictHiringTag(lead);

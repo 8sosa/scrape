@@ -2,9 +2,10 @@ import { config } from './config';
 import { leadSources } from './services/sources';
 import { filterHighIntentLeads } from './services/filter';
 import { filterUnprocessedLeads, recordProcessedLeads } from './services/db';
+import { scoreLead } from './services/resumeMatch';
 import { sendLeadNotification } from './services/telegram';
 import { sleep } from './utils/sleep';
-import type { NormalizedLead, PipelineRunSummary } from './types';
+import type { LeadMatch, NormalizedLead, PipelineRunSummary } from './types';
 
 /** Runs one full fetch (all sources, in parallel) -> filter -> dedupe -> notify cycle. */
 export async function runPipeline(): Promise<PipelineRunSummary> {
@@ -31,25 +32,47 @@ export async function runPipeline(): Promise<PipelineRunSummary> {
   const highIntentLeads = filterHighIntentLeads(allLeads);
   console.log(`[pipeline] ${highIntentLeads.length} leads matched high-intent filters`);
 
-  const newLeads = await filterUnprocessedLeads(highIntentLeads);
+  // Anything older than the freshness window is dropped from consideration
+  // entirely — this is also the backlog control: an unsent lead just ages
+  // out on its own in a later run instead of being deferred forever, so a
+  // growing backlog can never bury genuinely new leads.
+  const freshnessWindowSeconds = config.resumeMatch.freshnessWindowHours * 3600;
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const freshLeads = highIntentLeads.filter((lead) => nowSeconds - lead.createdUtc <= freshnessWindowSeconds);
+  console.log(`[pipeline] ${freshLeads.length} leads are within the ${config.resumeMatch.freshnessWindowHours}h freshness window`);
+
+  const matchByLeadId = new Map<string, LeadMatch>();
+  const wellMatchedLeads = freshLeads.filter((lead) => {
+    const match = scoreLead(lead);
+    matchByLeadId.set(lead.leadId, match);
+    return match.score >= config.resumeMatch.minScore;
+  });
+  console.log(`[pipeline] ${wellMatchedLeads.length} leads score >= ${config.resumeMatch.minScore}/10 against the resume`);
+
+  const newLeads = await filterUnprocessedLeads(wellMatchedLeads);
   console.log(`[pipeline] ${newLeads.length} leads are new (not previously notified)`);
 
-  // Newest first, capped, so a large backlog (e.g. right after loosening a
-  // filter) can't blow a serverless function's time budget or Telegram's
-  // flood limit in one run. Anything past the cap simply isn't recorded as
-  // processed, so it's picked up again — and re-ranked — on the next run.
-  const sortedByNewest = [...newLeads].sort((a, b) => b.createdUtc - a.createdUtc);
-  const leadsToNotify = sortedByNewest.slice(0, config.pipeline.maxNotificationsPerRun);
-  const deferredCount = sortedByNewest.length - leadsToNotify.length;
+  // Highest fit score first (freshest as tie-breaker), capped so a large
+  // batch can't blow the serverless time budget or Telegram's flood limit in
+  // one run. Anything past the cap simply isn't recorded as processed, so
+  // it's picked up again — and re-ranked — on the next run (or ages out of
+  // the freshness window before that happens, which is fine).
+  const sortedByScore = [...newLeads].sort((a, b) => {
+    const scoreDiff = (matchByLeadId.get(b.leadId)?.score ?? 0) - (matchByLeadId.get(a.leadId)?.score ?? 0);
+    return scoreDiff !== 0 ? scoreDiff : b.createdUtc - a.createdUtc;
+  });
+  const leadsToNotify = sortedByScore.slice(0, config.pipeline.maxNotificationsPerRun);
+  const deferredCount = sortedByScore.length - leadsToNotify.length;
   if (deferredCount > 0) {
     console.warn(
-      `[pipeline] Capping notifications at ${config.pipeline.maxNotificationsPerRun} this run; ${deferredCount} older new lead(s) deferred to a future run.`,
+      `[pipeline] Capping notifications at ${config.pipeline.maxNotificationsPerRun} this run; ${deferredCount} lower-priority new lead(s) deferred to a future run.`,
     );
   }
 
   const notifiedLeads: NormalizedLead[] = [];
   for (const lead of leadsToNotify) {
-    const result = await sendLeadNotification(lead);
+    const match = matchByLeadId.get(lead.leadId);
+    const result = await sendLeadNotification(lead, match);
 
     if (result === 'flood-limited') {
       console.warn(
@@ -79,6 +102,8 @@ export async function runPipeline(): Promise<PipelineRunSummary> {
   return {
     fetched: allLeads.length,
     matched: highIntentLeads.length,
+    freshEnough: freshLeads.length,
+    wellMatched: wellMatchedLeads.length,
     new: newLeads.length,
     notified: notifiedLeads.length,
     deferred: deferredCount,

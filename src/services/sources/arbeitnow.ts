@@ -3,8 +3,14 @@ import { config } from '../../config';
 import { stripHtml } from '../../utils/html';
 import type { ArbeitnowJob, ArbeitnowSearchResponse, LeadSource, NormalizedLead } from '../../types';
 
-function isRealJob(job: ArbeitnowJob): job is ArbeitnowJob & { slug: string; url: string } {
-  return typeof job.slug === 'string' && job.slug.length > 0 && typeof job.url === 'string' && job.url.length > 0;
+/**
+ * Arbeitnow is a mixed on-site/remote EU job board — its `remote` flag is
+ * the only reliable signal, so non-remote listings (the bulk of it, mostly
+ * Berlin/London/etc. on-site roles) are excluded right here at the source
+ * rather than relying on text heuristics downstream.
+ */
+function isRealRemoteJob(job: ArbeitnowJob): job is ArbeitnowJob & { slug: string; url: string } {
+  return typeof job.slug === 'string' && job.slug.length > 0 && typeof job.url === 'string' && job.url.length > 0 && job.remote === true;
 }
 
 function normalizeJob(job: ArbeitnowJob & { slug: string; url: string }): NormalizedLead {
@@ -33,7 +39,7 @@ async function fetchLatest(): Promise<readonly NormalizedLead[]> {
       timeout: 8_000,
     });
 
-    return response.data.data.filter(isRealJob).map(normalizeJob);
+    return response.data.data.filter(isRealRemoteJob).map(normalizeJob);
   } catch (error) {
     console.error(`[arbeitnow] Failed to fetch job feed: ${(error as Error).message}`);
     return [];

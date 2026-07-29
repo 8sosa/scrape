@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import { config } from '../config';
-import type { NormalizedLead } from '../types';
+import type { LeadMatch, NormalizedLead } from '../types';
 
 const SNIPPET_LENGTH = 250;
 
@@ -50,17 +50,31 @@ function formatAuthorLine(lead: NormalizedLead): string {
   return lead.platform === 'reddit' ? `u/${lead.author}` : lead.author;
 }
 
-function formatLeadMessage(lead: NormalizedLead): string {
+function formatFitLine(match: LeadMatch): string {
+  const skillsPart = match.matchedSkills.length > 0 ? match.matchedSkills.join(', ') : 'no specific skills recognized';
+  return `${match.score}/10 — ${skillsPart}`;
+}
+
+function formatLeadMessage(lead: NormalizedLead, match: LeadMatch | undefined): string {
   const snippet = buildSnippet(lead.body);
 
-  return [
+  const lines = [
     '🚨 *NEW BUYING INTENT LEAD DETECTED*',
     `📌 *Title:* ${escapeMarkdown(lead.title)}`,
     `📍 *Source:* ${escapeMarkdown(formatSourceLine(lead))}`,
+  ];
+
+  if (match) {
+    lines.push(`🎯 *Fit:* ${escapeMarkdown(formatFitLine(match))}`);
+  }
+
+  lines.push(
     `👤 *Author:* ${escapeMarkdown(formatAuthorLine(lead))}`,
     `🔗 *Link:* ${lead.url}`,
     `📝 *Snippet:* ${escapeMarkdown(snippet)}`,
-  ].join('\n');
+  );
+
+  return lines.join('\n');
 }
 
 interface TelegramSendMessageResponse {
@@ -79,9 +93,9 @@ interface TelegramSendMessageResponse {
 export type SendResult = 'sent' | 'failed' | 'flood-limited';
 
 /** Sends a single formatted lead alert to the configured Telegram chat/channel. */
-export async function sendLeadNotification(lead: NormalizedLead): Promise<SendResult> {
+export async function sendLeadNotification(lead: NormalizedLead, match?: LeadMatch): Promise<SendResult> {
   const url = `${config.telegram.apiBaseUrl}/bot${config.telegram.botToken}/sendMessage`;
-  const text = formatLeadMessage(lead);
+  const text = formatLeadMessage(lead, match);
 
   try {
     const response = await axios.post<TelegramSendMessageResponse>(
