@@ -6,6 +6,9 @@ import { remoteOkSource } from './remoteok';
 import { weWorkRemotelySource } from './weworkremotely';
 import { remotiveSource } from './remotive';
 import { arbeitnowSource } from './arbeitnow';
+import { jobicySource } from './jobicy';
+import { himalayasSource } from './himalayas';
+import { workingNomadsSource } from './workingnomads';
 
 export const leadSources: readonly LeadSource[] = [
   redditSource,
@@ -15,4 +18,7 @@ export const leadSources: readonly LeadSource[] = [
   weWorkRemotelySource,
   remotiveSource,
   arbeitnowSource,
+  jobicySource,
+  himalayasSource,
+  workingNomadsSource,
 ];

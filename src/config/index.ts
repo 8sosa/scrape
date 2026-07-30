@@ -44,6 +44,15 @@ export interface AppConfig {
   readonly arbeitnow: {
     readonly apiUrl: string;
   };
+  readonly jobicy: {
+    readonly apiUrl: string;
+  };
+  readonly himalayas: {
+    readonly apiUrl: string;
+  };
+  readonly workingNomads: {
+    readonly apiUrl: string;
+  };
   readonly supabase: {
     readonly url: string;
     readonly serviceRoleKey: string;
@@ -229,6 +238,15 @@ export const config: AppConfig = {
   },
   arbeitnow: {
     apiUrl: 'https://www.arbeitnow.com/api/job-board-api',
+  },
+  jobicy: {
+    apiUrl: 'https://jobicy.com/api/v2/remote-jobs',
+  },
+  himalayas: {
+    apiUrl: 'https://himalayas.app/jobs/api',
+  },
+  workingNomads: {
+    apiUrl: 'https://www.workingnomads.com/api/exposed_jobs/',
   },
   supabase: {
     url: requireEnv('SUPABASE_URL'),
