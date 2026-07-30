@@ -49,6 +49,15 @@ export interface AppConfig {
     readonly serviceRoleKey: string;
     readonly table: string;
   };
+  /**
+   * Identifies this deployment when its Supabase project is shared across
+   * multiple independent deployments (e.g. several friends' bots pointed at
+   * one database) — every dedup/claim query is scoped by this so one
+   * deployment's claimed lead never silently blocks another's. Defaults to
+   * 'default' so a deployment on its own dedicated Supabase project (the
+   * common case) needs no extra config.
+   */
+  readonly tenant: string;
   readonly telegram: {
     readonly botToken: string;
     readonly chatId: string;
@@ -226,6 +235,7 @@ export const config: AppConfig = {
     serviceRoleKey: requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
     table: 'processed_leads',
   },
+  tenant: process.env['TENANT_ID']?.trim() || 'default',
   telegram: {
     botToken: requireEnv('TELEGRAM_BOT_TOKEN'),
     chatId: requireEnv('TELEGRAM_CHAT_ID'),

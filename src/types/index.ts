@@ -132,6 +132,7 @@ export interface FilterResult {
 }
 
 export interface ProcessedLeadRecord {
+  readonly tenant: string;
   readonly lead_id: string;
   readonly platform: LeadPlatform;
   readonly channel: string;

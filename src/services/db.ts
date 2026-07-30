@@ -43,7 +43,7 @@ export async function filterUnprocessedLeads(leads: readonly NormalizedLead[]): 
   const batchResults = await Promise.all(
     batches.map(async (batch): Promise<readonly NormalizedLead[]> => {
       const ids = batch.map((lead) => lead.leadId);
-      const { data, error } = await supabase.from(config.supabase.table).select('lead_id').in('lead_id', ids);
+      const { data, error } = await supabase.from(config.supabase.table).select('lead_id').eq('tenant', config.tenant).in('lead_id', ids);
 
       if (error) {
         console.error(`[db] Failed to check a batch of ${ids.length} processed lead(s), skipping this batch: ${error.message}`);
@@ -69,13 +69,17 @@ const UNIQUE_VIOLATION = '23505';
  * best-effort pre-filter — under overlapping/concurrent invocations (two
  * scheduled runs overlapping, a manual re-trigger while one is still in
  * flight, etc.) two runs can both see the same lead as "not yet processed"
- * in that check. The unique constraint on lead_id is the actual source of
- * truth: whichever invocation's insert lands first wins the lead, and the
- * other gets a 23505 back here — BEFORE it has sent anything — so only one
- * Telegram message ever goes out per lead, however many runs are overlapping.
+ * in that check. The unique constraint on (tenant, lead_id) is the actual
+ * source of truth: whichever invocation's insert lands first wins the lead,
+ * and the other gets a 23505 back here — BEFORE it has sent anything — so
+ * only one Telegram message ever goes out per lead, however many runs are
+ * overlapping. Scoping by tenant means two independent deployments sharing
+ * one Supabase project each get their own claim on the same lead_id instead
+ * of racing each other for it.
  */
 export async function tryClaimLead(lead: NormalizedLead): Promise<boolean> {
   const record: ProcessedLeadRecord = {
+    tenant: config.tenant,
     lead_id: lead.leadId,
     platform: lead.platform,
     channel: lead.channel,
@@ -100,7 +104,7 @@ export async function tryClaimLead(lead: NormalizedLead): Promise<boolean> {
 
 /** Releases a claimed lead so it's retried on a future run, e.g. after its Telegram send actually failed. */
 export async function releaseLead(leadId: string): Promise<void> {
-  const { error } = await supabase.from(config.supabase.table).delete().eq('lead_id', leadId);
+  const { error } = await supabase.from(config.supabase.table).delete().eq('tenant', config.tenant).eq('lead_id', leadId);
 
   if (error) {
     console.error(`[db] Failed to release lead ${leadId} after a failed send (it won't be retried): ${error.message}`);
