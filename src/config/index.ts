@@ -44,6 +44,15 @@ export interface AppConfig {
   readonly arbeitnow: {
     readonly apiUrl: string;
   };
+  readonly jobicy: {
+    readonly apiUrl: string;
+  };
+  readonly himalayas: {
+    readonly apiUrl: string;
+  };
+  readonly workingNomads: {
+    readonly apiUrl: string;
+  };
   readonly supabase: {
     readonly url: string;
     readonly serviceRoleKey: string;
@@ -90,13 +99,11 @@ const SUBREDDITS: readonly string[] = [
   'startups',
   'freelance_forhire',
   'forhire',
-  'businessintelligence',
-  'PowerBI',
-  'analytics',
-  'CRM',
+  'Nextjs',
+  'shopify',
   'ecommerce',
   'SaaS',
-  'dataanalysis',
+  'reactjs',
 ];
 
 /**
@@ -104,59 +111,74 @@ const SUBREDDITS: readonly string[] = [
  * content (Reddit's general subs, HN front page) — used by 'intent-phrase' mode.
  */
 const TRIGGER_KEYWORDS: readonly string[] = [
-  'looking for a data analyst',
-  'looking for a bi analyst',
-  'need a data analyst',
-  'need a business intelligence analyst',
-  'looking for an onboarding specialist',
-  'need a crm specialist',
-  'need help with data analysis',
-  'need help with reporting',
-  'looking for someone to build dashboards',
-  'looking for a power bi',
-  'seeking a data analyst',
+  'looking for developer',
+  'looking for a developer',
+  'need a developer',
+  'need a dev',
+  'need help building',
+  'seeking developer',
+  'seeking a developer',
   'looking to hire',
   'looking for a contractor',
-  'any recommendations for a data analyst',
+  'who can build',
+  'any recommendations for a developer',
+  'budget for a developer',
   'recommendation for',
   'alternative to',
+  'hiring dev',
+  'shopify developer',
+  'next.js dev',
   'looking for agency',
 ];
 
 /**
- * Broad BI/data/CRM/onboarding relevance signals used by 'stack-relevance'
- * mode — for sources that are already inherently job/gig postings (RemoteOK,
- * WWR, Remotive, Arbeitnow, HN hiring/freelancer threads). These don't phrase
- * themselves as "looking for a data analyst", they just *are* job posts, so
+ * Broad dev/QA relevance signals used by 'stack-relevance' mode — for
+ * sources that are already inherently job/gig postings (RemoteOK, WWR,
+ * Remotive, Arbeitnow, HN hiring/freelancer threads). These don't phrase
+ * themselves as "looking for a developer", they just *are* dev job posts, so
  * intent-phrase matching would filter out nearly everything; relevance to
- * Maro's actual skill set is the right bar here instead.
+ * the dev/mobile/QA stack is the right bar here instead.
  */
 const STACK_RELEVANCE_KEYWORDS: readonly string[] = [
-  'data analyst',
-  'data analytics',
-  'business intelligence',
-  'bi analyst',
-  'power bi',
-  'tableau',
-  'looker',
-  'metabase',
-  'onboarding specialist',
-  'client onboarding',
-  'customer onboarding',
-  'implementation specialist',
-  'customer success',
-  'account manager',
-  'key account',
-  'crm',
-  'salesforce',
-  'hubspot',
-  'gohighlevel',
-  'financial analyst',
-  'financial analysis',
-  'reporting analyst',
-  'dashboard',
-  'sql',
-  'excel',
+  'developer',
+  'engineer',
+  'programmer',
+  'software',
+  'full stack',
+  'full-stack',
+  'frontend',
+  'front-end',
+  'front end',
+  'backend',
+  'back-end',
+  'back end',
+  'react',
+  'react native',
+  'angular',
+  'next.js',
+  'nextjs',
+  'node',
+  'typescript',
+  'javascript',
+  'c#',
+  '.net',
+  'laravel',
+  'php',
+  'shopify',
+  'ecommerce',
+  'e-commerce',
+  'saas',
+  'wordpress',
+  'web dev',
+  'python',
+  'ruby',
+  'java',
+  'ios developer',
+  'android developer',
+  'mobile developer',
+  'qa engineer',
+  'quality assurance',
+  'qa specialist',
 ];
 
 /** Phrases that indicate self-promotion rather than buying intent — always ignored. */
@@ -187,14 +209,15 @@ const NON_REMOTE_EXCLUSION_TERMS: readonly string[] = [
  */
 const HIRING_ONLY_SUBREDDITS: readonly string[] = ['forhire', 'freelance_forhire'];
 
-/** WWR category feeds scoped to BI/data/CRM/onboarding roles — the closest fit to Maro's background. */
+/** WWR category feeds scoped to software/mobile roles — the closest fit to the dev-lead use case. */
 const WWR_FEED_URLS: readonly string[] = [
-  'https://weworkremotely.com/categories/remote-customer-support-jobs.rss',
-  'https://weworkremotely.com/categories/remote-management-and-finance-jobs.rss',
+  'https://weworkremotely.com/categories/remote-full-stack-programming-jobs.rss',
+  'https://weworkremotely.com/categories/remote-front-end-programming-jobs.rss',
+  'https://weworkremotely.com/categories/remote-back-end-programming-jobs.rss',
 ];
 
-/** Remotive category slugs scoped to BI/data/CRM/onboarding roles. */
-const REMOTIVE_CATEGORIES: readonly string[] = ['data', 'business', 'customer-service'];
+/** Remotive category slug scoped to software development roles. */
+const REMOTIVE_CATEGORIES: readonly string[] = ['software-dev'];
 
 export const config: AppConfig = {
   triggerKeywords: TRIGGER_KEYWORDS,
@@ -229,6 +252,15 @@ export const config: AppConfig = {
   },
   arbeitnow: {
     apiUrl: 'https://www.arbeitnow.com/api/job-board-api',
+  },
+  jobicy: {
+    apiUrl: 'https://jobicy.com/api/v2/remote-jobs',
+  },
+  himalayas: {
+    apiUrl: 'https://himalayas.app/jobs/api',
+  },
+  workingNomads: {
+    apiUrl: 'https://www.workingnomads.com/api/exposed_jobs/',
   },
   supabase: {
     url: requireEnv('SUPABASE_URL'),

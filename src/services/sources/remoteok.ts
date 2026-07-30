@@ -25,15 +25,14 @@ function normalizeJob(job: RemoteOkJob & { id: string }): NormalizedLead {
 }
 
 /**
- * Fetches the RemoteOK public job feed, unfiltered by tag — RemoteOK's tag
- * taxonomy skews toward engineering roles and doesn't reliably cover
- * BI/data/CRM/onboarding roles, so relevance is enforced entirely by the
- * 'stack-relevance' filter mode downstream instead. Requires a descriptive
- * User-Agent — the default axios UA gets blocked.
+ * Fetches the RemoteOK public job feed, scoped to the "dev" tag to cut noise
+ * from non-engineering listings. Requires a descriptive User-Agent — the
+ * default axios UA gets blocked.
  */
 async function fetchLatest(): Promise<readonly NormalizedLead[]> {
   try {
     const response = await axios.get<readonly RemoteOkJob[]>(config.remoteOk.apiUrl, {
+      params: { tags: 'dev' },
       headers: { 'User-Agent': config.userAgent, Accept: 'application/json' },
       timeout: 8_000,
     });
