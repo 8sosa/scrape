@@ -25,20 +25,25 @@ function normalizeJob(job: RemotiveJob & { id: number; url: string }): Normalize
   };
 }
 
-/** Fetches the Remotive public job feed, scoped to the software-dev category. Free, no API key required. */
-async function fetchLatest(): Promise<readonly NormalizedLead[]> {
+async function fetchCategory(category: string): Promise<readonly NormalizedLead[]> {
   try {
     const response = await axios.get<RemotiveSearchResponse>(config.remotive.apiUrl, {
-      params: { category: 'software-dev' },
+      params: { category },
       headers: { 'User-Agent': config.userAgent, Accept: 'application/json' },
       timeout: 8_000,
     });
 
     return response.data.jobs.filter(isRealJob).map(normalizeJob);
   } catch (error) {
-    console.error(`[remotive] Failed to fetch job feed: ${(error as Error).message}`);
+    console.error(`[remotive] Failed to fetch category "${category}": ${(error as Error).message}`);
     return [];
   }
+}
+
+/** Fetches the Remotive public job feed across the configured categories. Free, no API key required. */
+async function fetchLatest(): Promise<readonly NormalizedLead[]> {
+  const results = await Promise.all(config.remotive.categories.map(fetchCategory));
+  return results.flat();
 }
 
 export const remotiveSource: LeadSource = {

@@ -47,13 +47,14 @@ function evaluateIntentPhrase(lead: NormalizedLead): FilterResult {
 /**
  * Job-board-shaped sources (RemoteOK, WWR, Remotive, Arbeitnow, HN
  * hiring/freelancer threads) are already hiring posts by construction — they
- * never phrase themselves as "looking for a developer". Relevance to the
- * dev/web stack is the right bar here, not intent phrasing.
+ * never phrase themselves as "looking for a data analyst". Relevance to the
+ * target skill set (config.stackRelevanceKeywords) is the right bar here, not
+ * intent phrasing.
  *
  * Matched against the TITLE ONLY, not the body: job descriptions are full of
- * company boilerplate ("SaaS leader", "our engineering team") that isn't
- * about the specific role being advertised — checking body text let sales,
- * HR, and finance postings at tech companies slip through.
+ * company boilerplate ("data-driven culture", "our analytics team") that
+ * isn't about the specific role being advertised — checking body text let
+ * unrelated postings at data-heavy companies slip through.
  */
 function evaluateStackRelevance(lead: NormalizedLead): FilterResult {
   const titleText = lead.title.toLowerCase();
@@ -63,7 +64,7 @@ function evaluateStackRelevance(lead: NormalizedLead): FilterResult {
     return { isMatch: false, matchedTriggers: [] };
   }
 
-  const matchedTriggers = config.devRelevanceKeywords.filter((keyword) => containsPhrase(titleText, keyword));
+  const matchedTriggers = config.stackRelevanceKeywords.filter((keyword) => containsPhrase(titleText, keyword));
   return { isMatch: matchedTriggers.length > 0, matchedTriggers };
 }
 
