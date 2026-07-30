@@ -1,6 +1,8 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { config } from '../config';
-import type { NormalizedLead, ProcessedLeadRecord } from '../types';
+import type { ApplicationMethod, DraftApplicationStatus, DraftApplicationRow, NormalizedLead, ProcessedLeadRecord } from '../types';
+
+const DRAFT_APPLICATIONS_TABLE = 'draft_applications';
 
 const supabase: SupabaseClient = createClient(config.supabase.url, config.supabase.serviceRoleKey, {
   auth: { persistSession: false },
@@ -104,5 +106,71 @@ export async function releaseLead(leadId: string): Promise<void> {
 
   if (error) {
     console.error(`[db] Failed to release lead ${leadId} after a failed send (it won't be retried): ${error.message}`);
+  }
+}
+
+export interface NewDraftApplication {
+  readonly leadId: string;
+  readonly method: ApplicationMethod;
+  readonly target: string;
+  readonly title: string;
+  readonly coverNote: string;
+}
+
+/** Persists a new draft application (status 'pending') and returns its row ID, or null on failure. */
+export async function saveDraftApplication(draft: NewDraftApplication): Promise<string | null> {
+  const { data, error } = await supabase
+    .from(DRAFT_APPLICATIONS_TABLE)
+    .insert({
+      lead_id: draft.leadId,
+      method: draft.method,
+      target: draft.target,
+      title: draft.title,
+      cover_note: draft.coverNote,
+      status: 'pending',
+    })
+    .select('id')
+    .single();
+
+  if (error || !data) {
+    console.error(`[db] Failed to save draft application for lead ${draft.leadId}: ${error?.message ?? 'no row returned'}`);
+    return null;
+  }
+
+  return (data as { readonly id: string }).id;
+}
+
+/** Records which Telegram message carries a draft's approve/skip buttons, so the webhook can edit it later. */
+export async function attachTelegramMessage(draftId: string, chatId: string, messageId: number): Promise<void> {
+  const { error } = await supabase
+    .from(DRAFT_APPLICATIONS_TABLE)
+    .update({ telegram_chat_id: chatId, telegram_message_id: String(messageId) })
+    .eq('id', draftId);
+
+  if (error) {
+    console.error(`[db] Failed to attach Telegram message to draft ${draftId}: ${error.message}`);
+  }
+}
+
+/** Fetches a single draft application by its ID (used when a Telegram approve/skip callback arrives). */
+export async function getDraftApplication(draftId: string): Promise<DraftApplicationRow | null> {
+  const { data, error } = await supabase.from(DRAFT_APPLICATIONS_TABLE).select('*').eq('id', draftId).maybeSingle();
+
+  if (error || !data) {
+    if (error) {
+      console.error(`[db] Failed to fetch draft application ${draftId}: ${error.message}`);
+    }
+    return null;
+  }
+
+  return data as DraftApplicationRow;
+}
+
+/** Updates a draft application's status (approved/skipped/sent/failed). */
+export async function updateDraftStatus(draftId: string, status: DraftApplicationStatus): Promise<void> {
+  const { error } = await supabase.from(DRAFT_APPLICATIONS_TABLE).update({ status }).eq('id', draftId);
+
+  if (error) {
+    console.error(`[db] Failed to update draft ${draftId} to status ${status}: ${error.message}`);
   }
 }

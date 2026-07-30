@@ -1,6 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import { config } from '../config';
-import type { LeadMatch, NormalizedLead } from '../types';
+import type { ApplicationMethod, DraftApplication, LeadMatch, NormalizedLead } from '../types';
 
 const SNIPPET_LENGTH = 250;
 
@@ -55,7 +55,11 @@ function formatFitLine(match: LeadMatch): string {
   return `${match.score}/10 — ${skillsPart}`;
 }
 
-function formatLeadMessage(lead: NormalizedLead, match: LeadMatch | undefined): string {
+function formatApplyLine(method: ApplicationMethod, target: string): string {
+  return method === 'email' ? `Email — ${target}` : 'External link (see 🔗 above)';
+}
+
+function formatLeadMessage(lead: NormalizedLead, match: LeadMatch | undefined, draft: DraftApplication | undefined): string {
   const snippet = buildSnippet(lead.body);
 
   const lines = [
@@ -74,14 +78,28 @@ function formatLeadMessage(lead: NormalizedLead, match: LeadMatch | undefined): 
     `📝 *Snippet:* ${escapeMarkdown(snippet)}`,
   );
 
+  if (draft) {
+    lines.push(
+      '',
+      `✍️ *Draft cover note:*\n${escapeMarkdown(draft.coverNote)}`,
+      '',
+      `📤 *Apply via:* ${escapeMarkdown(formatApplyLine(draft.method, draft.target))}`,
+    );
+  }
+
   return lines.join('\n');
 }
 
-interface TelegramSendMessageResponse {
+interface TelegramApiResponse<T = unknown> {
   readonly ok: boolean;
   readonly description?: string;
   readonly error_code?: number;
   readonly parameters?: { readonly retry_after?: number };
+  readonly result?: T;
+}
+
+interface TelegramMessageResult {
+  readonly message_id: number;
 }
 
 /**
@@ -92,40 +110,101 @@ interface TelegramSendMessageResponse {
  */
 export type SendResult = 'sent' | 'failed' | 'flood-limited';
 
-/** Sends a single formatted lead alert to the configured Telegram chat/channel. */
-export async function sendLeadNotification(lead: NormalizedLead, match?: LeadMatch): Promise<SendResult> {
-  const url = `${config.telegram.apiBaseUrl}/bot${config.telegram.botToken}/sendMessage`;
-  const text = formatLeadMessage(lead, match);
+export interface SendOutcome {
+  readonly result: SendResult;
+  /** The sent message's ID, present only when result === 'sent' — needed to attach approve/skip buttons to a draft row. */
+  readonly messageId?: number;
+}
+
+function botUrl(method: string): string {
+  return `${config.telegram.apiBaseUrl}/bot${config.telegram.botToken}/${method}`;
+}
+
+function draftInlineKeyboard(draft: DraftApplication) {
+  const approveLabel = draft.method === 'email' ? '✅ Approve & Send Email' : '✅ Approve';
+  return {
+    inline_keyboard: [
+      [
+        { text: approveLabel, callback_data: `approve:${draft.id}` },
+        { text: '❌ Skip', callback_data: `skip:${draft.id}` },
+      ],
+    ],
+  };
+}
+
+/**
+ * Sends a lead alert to the configured Telegram chat/channel. When `draft` is
+ * provided, the message includes the drafted cover note and Approve/Skip
+ * inline buttons instead of being a plain notification.
+ */
+export async function sendLeadNotification(
+  lead: NormalizedLead,
+  match?: LeadMatch,
+  draft?: DraftApplication,
+): Promise<SendOutcome> {
+  const text = formatLeadMessage(lead, match, draft);
 
   try {
-    const response = await axios.post<TelegramSendMessageResponse>(
-      url,
+    const response = await axios.post<TelegramApiResponse<TelegramMessageResult>>(
+      botUrl('sendMessage'),
       {
         chat_id: config.telegram.chatId,
         text,
         parse_mode: 'Markdown',
         disable_web_page_preview: false,
+        ...(draft ? { reply_markup: draftInlineKeyboard(draft) } : {}),
       },
       { timeout: 8_000 },
     );
 
     if (!response.data.ok) {
       console.error(`[telegram] API rejected message for lead_id=${lead.leadId}: ${response.data.description ?? 'unknown error'}`);
-      return 'failed';
+      return { result: 'failed' };
     }
 
     console.log(`[telegram] Sent alert for lead_id=${lead.leadId} (${lead.platform})`);
-    return 'sent';
+    const messageId = response.data.result?.message_id;
+    return messageId !== undefined ? { result: 'sent', messageId } : { result: 'sent' };
   } catch (error) {
-    const axiosError = error as AxiosError<TelegramSendMessageResponse>;
+    const axiosError = error as AxiosError<TelegramApiResponse>;
     const description = axiosError.response?.data?.description ?? axiosError.message;
 
     if (axiosError.response?.status === 429) {
       console.error(`[telegram] Flood limited sending lead_id=${lead.leadId}: ${description}`);
-      return 'flood-limited';
+      return { result: 'flood-limited' };
     }
 
     console.error(`[telegram] Failed to send alert for lead_id=${lead.leadId}: ${description}`);
-    return 'failed';
+    return { result: 'failed' };
+  }
+}
+
+/** Edits a previously-sent message (used after an Approve/Skip decision) and clears its inline keyboard. */
+export async function editMessageAfterDecision(chatId: string, messageId: number, originalText: string, statusLine: string): Promise<void> {
+  try {
+    await axios.post(
+      botUrl('editMessageText'),
+      {
+        chat_id: chatId,
+        message_id: messageId,
+        text: `${originalText}\n\n${statusLine}`,
+        parse_mode: 'Markdown',
+        reply_markup: { inline_keyboard: [] },
+      },
+      { timeout: 8_000 },
+    );
+  } catch (error) {
+    const axiosError = error as AxiosError<TelegramApiResponse>;
+    console.error(`[telegram] Failed to edit message ${messageId} in chat ${chatId}: ${axiosError.response?.data?.description ?? axiosError.message}`);
+  }
+}
+
+/** Acknowledges a callback query so Telegram stops showing the button's loading spinner. */
+export async function answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
+  try {
+    await axios.post(botUrl('answerCallbackQuery'), { callback_query_id: callbackQueryId, text }, { timeout: 8_000 });
+  } catch (error) {
+    const axiosError = error as AxiosError<TelegramApiResponse>;
+    console.error(`[telegram] Failed to answer callback query ${callbackQueryId}: ${axiosError.response?.data?.description ?? axiosError.message}`);
   }
 }

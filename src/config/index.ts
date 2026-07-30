@@ -52,6 +52,18 @@ export interface AppConfig {
     readonly botToken: string;
     readonly chatId: string;
     readonly apiBaseUrl: string;
+    /** Null disables the approve/skip webhook entirely — it fails closed rather than accepting unverified callbacks. */
+    readonly webhookSecret: string | null;
+  };
+  readonly anthropic: {
+    /** Null falls back to a deterministic template cover note instead of a Claude-drafted one. */
+    readonly apiKey: string | null;
+    readonly model: string;
+  };
+  readonly gmail: {
+    /** Null disables auto-send for email-apply leads — the draft is still shown in Telegram for manual sending. */
+    readonly user: string | null;
+    readonly appPassword: string | null;
   };
   readonly pipeline: {
     /** Caps Telegram sends per run so a large backlog can't blow the serverless timeout or Telegram's flood limit. */
@@ -229,6 +241,15 @@ export const config: AppConfig = {
     botToken: requireEnv('TELEGRAM_BOT_TOKEN'),
     chatId: requireEnv('TELEGRAM_CHAT_ID'),
     apiBaseUrl: 'https://api.telegram.org',
+    webhookSecret: optionalEnv('TELEGRAM_WEBHOOK_SECRET'),
+  },
+  anthropic: {
+    apiKey: optionalEnv('ANTHROPIC_API_KEY'),
+    model: 'claude-opus-5',
+  },
+  gmail: {
+    user: optionalEnv('GMAIL_USER'),
+    appPassword: optionalEnv('GMAIL_APP_PASSWORD'),
   },
   pipeline: {
     // At ~1.4s per send (1100ms spacing + network latency), 15/run stays

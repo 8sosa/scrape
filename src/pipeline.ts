@@ -1,11 +1,41 @@
 import { config } from './config';
 import { leadSources } from './services/sources';
 import { filterHighIntentLeads } from './services/filter';
-import { filterUnprocessedLeads, releaseLead, tryClaimLead } from './services/db';
+import { attachTelegramMessage, filterUnprocessedLeads, releaseLead, saveDraftApplication, tryClaimLead } from './services/db';
 import { scoreLead } from './services/resumeMatch';
+import { resolveApplyTarget } from './services/applyMethod';
+import { generateCoverNote } from './services/coverNoteDraft';
 import { sendLeadNotification } from './services/telegram';
 import { sleep } from './utils/sleep';
-import type { LeadMatch, NormalizedLead, PipelineRunSummary } from './types';
+import type { DraftApplication, LeadMatch, NormalizedLead, PipelineRunSummary } from './types';
+
+/** Builds and persists a draft application for a lead, or undefined if persistence fails (the lead is still notified, just without approve/skip buttons). */
+async function buildDraft(lead: NormalizedLead, match: LeadMatch): Promise<DraftApplication | undefined> {
+  const applyTarget = resolveApplyTarget(lead);
+  const coverNote = await generateCoverNote(lead, match);
+
+  const draftId = await saveDraftApplication({
+    leadId: lead.leadId,
+    method: applyTarget.method,
+    target: applyTarget.target,
+    title: lead.title,
+    coverNote,
+  });
+
+  if (!draftId) {
+    return undefined;
+  }
+
+  return {
+    id: draftId,
+    leadId: lead.leadId,
+    method: applyTarget.method,
+    target: applyTarget.target,
+    title: lead.title,
+    coverNote,
+    status: 'pending',
+  };
+}
 
 /** Runs one full fetch (all sources, in parallel) -> filter -> dedupe -> notify cycle. */
 export async function runPipeline(): Promise<PipelineRunSummary> {
@@ -72,10 +102,11 @@ export async function runPipeline(): Promise<PipelineRunSummary> {
       continue;
     }
 
-    const match = matchByLeadId.get(lead.leadId);
-    const result = await sendLeadNotification(lead, match);
+    const match = matchByLeadId.get(lead.leadId) ?? { score: 0, matchedSkills: [], mentionedSkills: [] };
+    const draft = await buildDraft(lead, match);
+    const outcome = await sendLeadNotification(lead, match, draft);
 
-    if (result === 'flood-limited') {
+    if (outcome.result === 'flood-limited') {
       await releaseLead(lead.leadId);
       console.warn(
         `[pipeline] Telegram flood limit hit after ${notifiedLeads.length} send(s) this run; stopping early — the rest are deferred to the next run.`,
@@ -83,8 +114,11 @@ export async function runPipeline(): Promise<PipelineRunSummary> {
       break;
     }
 
-    if (result === 'sent') {
+    if (outcome.result === 'sent') {
       notifiedLeads.push(lead);
+      if (draft && outcome.messageId) {
+        await attachTelegramMessage(draft.id, config.telegram.chatId, outcome.messageId);
+      }
     } else {
       // Claimed but never actually delivered — release it so it's retried
       // on a future run instead of being silently lost.

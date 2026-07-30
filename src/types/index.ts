@@ -154,3 +154,36 @@ export interface LeadMatch {
   readonly matchedSkills: readonly string[];
   readonly mentionedSkills: readonly string[];
 }
+
+/**
+ * How to act on an approved application. 'email' when the lead's own text
+ * names an address to apply to (found anywhere — Reddit/HN posts included —
+ * not source-restricted); 'external-link' otherwise, pointing at the lead's URL.
+ */
+export type ApplicationMethod = 'email' | 'external-link';
+
+export type DraftApplicationStatus = 'pending' | 'approved' | 'skipped' | 'sent' | 'failed';
+
+/** An application draft awaiting (or past) human approval in Telegram. */
+export interface DraftApplication {
+  readonly id: string;
+  readonly leadId: string;
+  readonly method: ApplicationMethod;
+  readonly target: string;
+  readonly title: string;
+  readonly coverNote: string;
+  readonly status: DraftApplicationStatus;
+}
+
+/** Raw snake_case row shape from the draft_applications table. */
+export interface DraftApplicationRow {
+  readonly id: string;
+  readonly lead_id: string;
+  readonly method: ApplicationMethod;
+  readonly target: string;
+  readonly title: string;
+  readonly cover_note: string;
+  readonly status: DraftApplicationStatus;
+  readonly telegram_chat_id: string | null;
+  readonly telegram_message_id: string | null;
+}
