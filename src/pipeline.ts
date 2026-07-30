@@ -90,43 +90,57 @@ export async function runPipeline(): Promise<PipelineRunSummary> {
     );
   }
 
+  // Claim BEFORE sending — the atomic insert is what actually prevents two
+  // overlapping invocations (an overlapping schedule, a manual re-trigger
+  // mid-run, etc.) from both sending the same lead. Claims run in parallel
+  // since each is an independent, cheap DB insert.
+  const claimResults = await Promise.all(leadsToNotify.map(async (lead) => ({ lead, claimed: await tryClaimLead(lead) })));
+  const claimedLeads = claimResults.filter((r) => r.claimed).map((r) => r.lead);
+
+  // Draft generation (a real Claude API call per lead) is the slow step —
+  // run it in parallel across every claimed lead instead of one at a time
+  // inside the send loop. Sequentially, N leads at several seconds each for
+  // a cover note blows the serverless time budget; in parallel it costs
+  // roughly the slowest single call, not the sum of all of them.
+  const draftsByLeadId = new Map<string, DraftApplication | undefined>();
+  await Promise.all(
+    claimedLeads.map(async (lead) => {
+      const match = matchByLeadId.get(lead.leadId) ?? { score: 0, matchedSkills: [], mentionedSkills: [] };
+      draftsByLeadId.set(lead.leadId, await buildDraft(lead, match));
+    }),
+  );
+
+  // Sending itself must stay sequential — Telegram's flood limit is on send rate, not total volume.
   const notifiedLeads: NormalizedLead[] = [];
-  for (const lead of leadsToNotify) {
-    // Claim BEFORE sending — the atomic insert is what actually prevents two
-    // overlapping invocations (an overlapping schedule, a manual re-trigger
-    // mid-run, etc.) from both sending the same lead. If another invocation
-    // already claimed it, this returns false and we move on without ever
-    // calling Telegram for it.
-    const claimed = await tryClaimLead(lead);
-    if (!claimed) {
-      continue;
-    }
-
+  for (const lead of claimedLeads) {
     const match = matchByLeadId.get(lead.leadId) ?? { score: 0, matchedSkills: [], mentionedSkills: [] };
-    const draft = await buildDraft(lead, match);
+    const draft = draftsByLeadId.get(lead.leadId);
     const outcome = await sendLeadNotification(lead, match, draft);
-
-    if (outcome.result === 'flood-limited') {
-      await releaseLead(lead.leadId);
-      console.warn(
-        `[pipeline] Telegram flood limit hit after ${notifiedLeads.length} send(s) this run; stopping early — the rest are deferred to the next run.`,
-      );
-      break;
-    }
 
     if (outcome.result === 'sent') {
       notifiedLeads.push(lead);
       if (draft && outcome.messageId) {
         await attachTelegramMessage(draft.id, config.telegram.chatId, outcome.messageId);
       }
-    } else {
-      // Claimed but never actually delivered — release it so it's retried
-      // on a future run instead of being silently lost.
-      await releaseLead(lead.leadId);
+    }
+
+    if (outcome.result === 'flood-limited') {
+      console.warn(
+        `[pipeline] Telegram flood limit hit after ${notifiedLeads.length} send(s) this run; stopping early — the rest are deferred to the next run.`,
+      );
+      break;
     }
 
     await sleep(config.pipeline.telegramSendIntervalMs);
   }
+
+  // Release every claimed lead that never actually got delivered — failed
+  // sends, flood-limited sends, and anything never reached because of an
+  // early break — so all of them are retried (and re-ranked) on a future
+  // run instead of being silently stuck as "processed" forever.
+  const notifiedLeadIds = new Set(notifiedLeads.map((lead) => lead.leadId));
+  const unsentLeads = claimedLeads.filter((lead) => !notifiedLeadIds.has(lead.leadId));
+  await Promise.all(unsentLeads.map((lead) => releaseLead(lead.leadId)));
 
   console.log(`[pipeline] Run completed at ${new Date().toISOString()}`);
 

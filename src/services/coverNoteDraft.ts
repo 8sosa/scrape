@@ -10,7 +10,11 @@ function getClient(): Anthropic | null {
     return null;
   }
   if (!cachedClient) {
-    cachedClient = new Anthropic({ apiKey: config.anthropic.apiKey });
+    // The SDK's defaults (10-minute timeout, 2 retries) are far too generous
+    // for a serverless function on a 30s budget — a single slow/hanging call
+    // could eat the whole run. Bounded tightly here; a timeout or failed
+    // retry just falls through to the deterministic fallback note below.
+    cachedClient = new Anthropic({ apiKey: config.anthropic.apiKey, timeout: 8_000, maxRetries: 1 });
   }
   return cachedClient;
 }

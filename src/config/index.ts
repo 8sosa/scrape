@@ -270,9 +270,12 @@ export const config: AppConfig = {
     appPassword: optionalEnv('GMAIL_APP_PASSWORD'),
   },
   pipeline: {
-    // At ~1.4s per send (1100ms spacing + network latency), 15/run stays
-    // safely inside Netlify's 30s function timeout with margin for fetch/dedup.
-    maxNotificationsPerRun: 15,
+    // Budget: ~5s fetch/filter/dedup + ~8s parallel draft generation (capped
+    // by the Anthropic client's own 8s timeout, since it runs once for the
+    // whole batch, not per lead) + N * ~1.4s sequential sends (1100ms
+    // spacing + network latency). At 10/run that's ~27s, leaving margin
+    // inside Netlify's 30s function timeout.
+    maxNotificationsPerRun: 10,
     telegramSendIntervalMs: 1100,
   },
   cronSchedule: process.env['CRON_SCHEDULE'] ?? '*/10 * * * *',
