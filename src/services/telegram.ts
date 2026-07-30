@@ -38,6 +38,12 @@ function formatSourceLine(lead: NormalizedLead): string {
       return `Remotive — ${lead.channel}`;
     case 'arbeitnow':
       return `Arbeitnow — ${lead.channel}`;
+    case 'jobicy':
+      return `Jobicy — ${lead.channel}`;
+    case 'himalayas':
+      return `Himalayas — ${lead.channel}`;
+    case 'workingnomads':
+      return `Working Nomads — ${lead.channel}`;
     default: {
       const exhaustiveCheck: never = lead.platform;
       throw new Error(`Unhandled platform: ${String(exhaustiveCheck)}`);

@@ -91,8 +91,65 @@ export interface ArbeitnowSearchResponse {
   readonly data: readonly ArbeitnowJob[];
 }
 
+/** Shape of a single job listing from the Jobicy JSON API. */
+export interface JobicyJob {
+  readonly id?: number;
+  readonly url?: string;
+  readonly jobTitle?: string;
+  readonly companyName?: string;
+  readonly jobIndustry?: readonly string[];
+  readonly jobExcerpt?: string;
+  readonly jobDescription?: string;
+  /** ISO 8601 string. */
+  readonly pubDate?: string;
+}
+
+export interface JobicySearchResponse {
+  readonly jobs: readonly JobicyJob[];
+}
+
+/** Shape of a single job listing from the Himalayas JSON API. */
+export interface HimalayasJob {
+  readonly title?: string;
+  readonly excerpt?: string;
+  readonly description?: string;
+  readonly companyName?: string;
+  readonly categories?: readonly string[];
+  /** Unix seconds. */
+  readonly pubDate?: number;
+  readonly applicationLink?: string;
+  /** A stable URL, used as the unique ID — Himalayas has no separate numeric ID field. */
+  readonly guid?: string;
+}
+
+export interface HimalayasSearchResponse {
+  readonly jobs: readonly HimalayasJob[];
+}
+
+/** Shape of a single job listing from the Working Nomads JSON API. Response is a bare array, not wrapped in an object. */
+export interface WorkingNomadsJob {
+  readonly url?: string;
+  readonly title?: string;
+  readonly description?: string;
+  readonly company_name?: string;
+  readonly category_name?: string;
+  /** Comma-separated, not an array. */
+  readonly tags?: string;
+  /** ISO 8601 string with a timezone offset. */
+  readonly pub_date?: string;
+}
+
 /** Platforms this system polls for leads. */
-export type LeadPlatform = 'reddit' | 'hackernews' | 'remoteok' | 'weworkremotely' | 'remotive' | 'arbeitnow';
+export type LeadPlatform =
+  | 'reddit'
+  | 'hackernews'
+  | 'remoteok'
+  | 'weworkremotely'
+  | 'remotive'
+  | 'arbeitnow'
+  | 'jobicy'
+  | 'himalayas'
+  | 'workingnomads';
 
 /**
  * How a lead should be evaluated for high-intent matching, chosen by the
