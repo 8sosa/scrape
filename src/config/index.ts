@@ -68,6 +68,13 @@ export interface AppConfig {
     /** Null falls back to a deterministic template cover note instead of a Claude-drafted one. */
     readonly apiKey: string | null;
     readonly model: string;
+    /**
+     * A lead's resume-fit score must be at least this (out of 10) to spend a
+     * Claude API call on it — below this, it still gets notified and still
+     * gets a draft, just the free deterministic template instead of a
+     * Claude-generated one. This only gates API spend, not notification.
+     */
+    readonly minFitScoreForDraft: number;
   };
   readonly gmail: {
     /** Null disables auto-send for email-apply leads — the draft is still shown in Telegram for manual sending. */
@@ -264,6 +271,7 @@ export const config: AppConfig = {
   anthropic: {
     apiKey: optionalEnv('ANTHROPIC_API_KEY'),
     model: 'claude-opus-5',
+    minFitScoreForDraft: 8,
   },
   gmail: {
     user: optionalEnv('GMAIL_USER'),

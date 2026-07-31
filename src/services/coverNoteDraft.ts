@@ -31,12 +31,18 @@ function buildFallbackNote(lead: NormalizedLead, skillsList: string): string {
 
 /**
  * Drafts a short cover note tailored to the lead and the resume's matched
- * skills. Falls back to a deterministic template if no ANTHROPIC_API_KEY is
- * configured, Claude declines the request, or the call fails — the approval
- * flow always has something to show, generated or not.
+ * skills. Falls back to a deterministic template — no Claude API call, no
+ * spend — if no ANTHROPIC_API_KEY is configured, the lead's fit score is
+ * below `anthropic.minFitScoreForDraft`, Claude declines the request, or the
+ * call fails. Every lead still gets notified and still gets some draft
+ * either way; this only gates which ones are worth spending a real API call on.
  */
 export async function generateCoverNote(lead: NormalizedLead, match: LeadMatch): Promise<string> {
   const skillsList = match.matchedSkills.length > 0 ? match.matchedSkills.join(', ') : RESUME_SKILLS.slice(0, 8).join(', ');
+
+  if (match.score < config.anthropic.minFitScoreForDraft) {
+    return buildFallbackNote(lead, skillsList);
+  }
 
   const client = getClient();
   if (!client) {
